@@ -334,39 +334,44 @@ def dividir_celdas(img, margen=4):
         celdas.append(fila_celdas)
     return celdas
 
-def predecir_celda(celda, reader):
-    gris = cv2.cvtColor(celda, cv2.COLOR_BGR2GRAY)
-
-    # 1. Escalar a 96x96 (más grande = mejor lectura de trazos finos como el 1)
+def preprocesar_celda(gris, fondo_oscuro):
+    """Preprocesa celda según si el fondo es oscuro o claro."""
     gris = cv2.resize(gris, (96, 96), interpolation=cv2.INTER_CUBIC)
-
-    # 2. Mejorar contraste con CLAHE (especialmente útil en capturas oscuras)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
     gris = clahe.apply(gris)
-
-    # 3. Umbralización adaptativa: fuerza el dígito a blanco sobre negro
+    if fondo_oscuro:
+        # Fondo oscuro con dígitos claros → invertir para EasyOCR
+        gris = cv2.bitwise_not(gris)
     gris = cv2.adaptiveThreshold(
         gris, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY, 11, 2
     )
+    return gris
 
-    # Primera pasada con confianza alta
-    resultado = reader.readtext(gris, allowlist='123456789', detail=1, width_ths=0.2)
+def predecir_celda(celda, reader):
+    gris = cv2.cvtColor(celda, cv2.COLOR_BGR2GRAY)
 
-    if resultado:
-        texto = resultado[0][1]
-        confianza = resultado[0][2]
-        if texto.isdigit() and 1 <= int(texto) <= 9 and confianza >= 0.4:
-            return int(texto)
+    # Detectar automáticamente si el fondo es oscuro (media de píxeles < 128)
+    fondo_oscuro = np.mean(gris) < 128
 
-    # Segunda pasada sin umbral de confianza (celda problemática, último intento)
-    resultado2 = reader.readtext(gris, allowlist='123456789', detail=1, width_ths=0.1)
-    if resultado2:
-        texto2 = resultado2[0][1]
-        confianza2 = resultado2[0][2]
-        if texto2.isdigit() and 1 <= int(texto2) <= 9 and confianza2 >= 0.25:
-            return int(texto2)
+    # Intentar primero con la detección automática, luego con la inversa
+    for usar_oscuro in [fondo_oscuro, not fondo_oscuro]:
+        img = preprocesar_celda(gris.copy(), usar_oscuro)
+
+        # Primera pasada: confianza alta
+        resultado = reader.readtext(img, allowlist='123456789', detail=1, width_ths=0.2)
+        if resultado:
+            texto, confianza = resultado[0][1], resultado[0][2]
+            if texto.isdigit() and 1 <= int(texto) <= 9 and confianza >= 0.4:
+                return int(texto)
+
+        # Segunda pasada: confianza más baja
+        resultado2 = reader.readtext(img, allowlist='123456789', detail=1, width_ths=0.1)
+        if resultado2:
+            texto2, confianza2 = resultado2[0][1], resultado2[0][2]
+            if texto2.isdigit() and 1 <= int(texto2) <= 9 and confianza2 >= 0.25:
+                return int(texto2)
 
     return 0
 
