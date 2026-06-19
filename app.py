@@ -336,14 +336,38 @@ def dividir_celdas(img, margen=4):
 
 def predecir_celda(celda, reader):
     gris = cv2.cvtColor(celda, cv2.COLOR_BGR2GRAY)
-    gris = cv2.resize(gris, (gris.shape[1]*3, gris.shape[0]*3), interpolation=cv2.INTER_CUBIC)
-    resultado = reader.readtext(gris, allowlist='123456789', detail=1)
-    if not resultado:
-        return 0
-    texto = resultado[0][1]
-    confianza = resultado[0][2]
-    if texto.isdigit() and 1 <= int(texto) <= 9:
-        return int(texto)
+
+    # 1. Escalar a 96x96 (más grande = mejor lectura de trazos finos como el 1)
+    gris = cv2.resize(gris, (96, 96), interpolation=cv2.INTER_CUBIC)
+
+    # 2. Mejorar contraste con CLAHE (especialmente útil en capturas oscuras)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    gris = clahe.apply(gris)
+
+    # 3. Umbralización adaptativa: fuerza el dígito a blanco sobre negro
+    gris = cv2.adaptiveThreshold(
+        gris, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 11, 2
+    )
+
+    # Primera pasada con confianza alta
+    resultado = reader.readtext(gris, allowlist='123456789', detail=1, width_ths=0.2)
+
+    if resultado:
+        texto = resultado[0][1]
+        confianza = resultado[0][2]
+        if texto.isdigit() and 1 <= int(texto) <= 9 and confianza >= 0.4:
+            return int(texto)
+
+    # Segunda pasada sin umbral de confianza (celda problemática, último intento)
+    resultado2 = reader.readtext(gris, allowlist='123456789', detail=1, width_ths=0.1)
+    if resultado2:
+        texto2 = resultado2[0][1]
+        confianza2 = resultado2[0][2]
+        if texto2.isdigit() and 1 <= int(texto2) <= 9 and confianza2 >= 0.25:
+            return int(texto2)
+
     return 0
 
 def detectar_sudoku(celdas, reader):
@@ -475,6 +499,11 @@ if imagen_subida:
 
     st.markdown(f"<p style='color:#c084fc'>✦ {numeros_detectados} dígitos detectados · {huecos} huecos por resolver</p>", unsafe_allow_html=True)
     st.markdown(render_sudoku(sudoku), unsafe_allow_html=True)
+
+    # Debug opcional: muestra el sudoku en texto para verificar la lectura
+    with st.expander("🔍 Ver lectura OCR en texto (debug)"):
+        for i, fila in enumerate(sudoku):
+            st.text(f"Fila {i+1}: {fila}")
 
     # ── PASO 3: RESOLVER ─────────────────────────────────────
     st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
