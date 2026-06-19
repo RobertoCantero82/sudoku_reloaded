@@ -284,7 +284,7 @@ st.markdown("<p class='pixel-subtitle'>★ LA GATA MAGA RESUELVE TODO ★</p>", 
 # ── Cargar modelos ───────────────────────────────────────────
 @st.cache_resource
 def cargar_modelos():
-    modelo_yolo = YOLO("modelos/best.pt")
+    modelo_yolo = YOLO("../modelos/best.pt")
     reader = easyocr.Reader(['en'], gpu=False)
     return modelo_yolo, reader
 

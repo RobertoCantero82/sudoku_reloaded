@@ -1,6 +1,0 @@
-train: 'img_proc/images/train'
-test: 'img_proc/images/test'
-val: 'img_proc/images/val'
-
-nc: 1
-names: ['sudoku']
