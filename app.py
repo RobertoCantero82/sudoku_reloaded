@@ -7,294 +7,242 @@ import tempfile
 import os
 import copy
 import time
-import base64
+import random
+import streamlit.components.v1 as components
 
-# ── Ruta base del proyecto (funciona en local y en Streamlit Cloud) ──
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ── Configuración ────────────────────────────────────────────
-st.set_page_config(
-    page_title="Sudoku Master 🐱‍🔮",
-    page_icon="🔮",
-    layout="centered"
-)
+st.set_page_config(page_title="SUDOKU RELOADED", page_icon="🟢", layout="centered")
 
-# ── CSS pixel art ────────────────────────────────────────────
+# ── Lluvia de código Matrix (se inyecta en el documento padre real) ──
+components.html("""
+<script>
+const doc = window.parent.document;
+if (!doc.getElementById('matrix-canvas')) {
+    const canvas = doc.createElement('canvas');
+    canvas.id = 'matrix-canvas';
+    canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;opacity:0.30;pointer-events:none;';
+    doc.body.appendChild(canvas);
+
+    const ctx = canvas.getContext('2d');
+    function resize(){ canvas.width = window.parent.innerWidth; canvas.height = window.parent.innerHeight; }
+    resize();
+    window.parent.addEventListener('resize', resize);
+
+    const chars = '0123456789ABCDEF$+-*/<>=ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾊﾋﾌﾍﾎ'.split('');
+    const fs = 16;
+    let drops = Array(Math.floor(canvas.width / fs)).fill(1);
+
+    function draw(){
+        ctx.fillStyle = 'rgba(0,0,0,0.06)';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = '#00ff41';
+        ctx.font = fs + 'px monospace';
+        for(let i=0;i<drops.length;i++){
+            const t = chars[Math.floor(Math.random()*chars.length)];
+            ctx.fillText(t, i*fs, drops[i]*fs);
+            if(drops[i]*fs > canvas.height && Math.random() > 0.975) drops[i]=0;
+            drops[i]++;
+        }
+    }
+    setInterval(draw, 50);
+}
+</script>
+""", height=0)
+
+# ── CSS Matrix ───────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'VT323', monospace;
-    font-size: 18px;
-}
+/* Fondo negro y la lluvia detrás de todo */
+.stApp { background-color: #000000; }
+.main .block-container { background: transparent; }
+.main .block-container { position: relative; z-index: 1; }
 
-.stApp {
-    background-color: #1a0a2e;
-    background-image:
-        radial-gradient(ellipse at 20% 50%, rgba(120, 40, 200, 0.15) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 20%, rgba(200, 100, 40, 0.1) 0%, transparent 40%);
-}
-
-/* Stars background */
-.stApp::before {
-    content: '';
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background-image:
-        radial-gradient(1px 1px at 10% 15%, #fff 0%, transparent 100%),
-        radial-gradient(1px 1px at 30% 5%, #fff 0%, transparent 100%),
-        radial-gradient(1px 1px at 50% 25%, #fff 0%, transparent 100%),
-        radial-gradient(1px 1px at 70% 10%, #fff 0%, transparent 100%),
-        radial-gradient(1px 1px at 90% 20%, #fff 0%, transparent 100%),
-        radial-gradient(1px 1px at 20% 80%, #fff 0%, transparent 100%),
-        radial-gradient(1px 1px at 80% 70%, #fff 0%, transparent 100%),
-        radial-gradient(2px 2px at 60% 90%, rgba(255,200,100,0.8) 0%, transparent 100%),
-        radial-gradient(2px 2px at 40% 60%, rgba(180,100,255,0.8) 0%, transparent 100%);
-    pointer-events: none;
-    z-index: 0;
-}
+html, body, [class*="css"] { font-family: 'Share Tech Mono', monospace; font-size: 17px; }
 
 h1 {
-    font-family: 'Press Start 2P', monospace !important;
-    font-size: 1.6rem !important;
-    color: #f5a623 !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 2rem !important; color: #00ff41 !important;
     text-align: center !important;
-    text-shadow: 3px 3px 0 #7b2d8b, 6px 6px 0 rgba(123,45,139,0.4) !important;
-    letter-spacing: 2px !important;
-    line-height: 1.6 !important;
-    margin-bottom: 0 !important;
+    text-shadow: 0 0 10px #00ff41, 0 0 20px #00ff41 !important;
+    letter-spacing: 6px !important; margin-bottom: 0 !important;
 }
-
-.pixel-subtitle {
-    font-family: 'VT323', monospace;
-    font-size: 1.3rem;
-    color: #c084fc;
-    text-align: center;
-    margin-bottom: 1.5rem;
-    letter-spacing: 2px;
+.matrix-subtitle {
+    font-family: 'Share Tech Mono', monospace; font-size: 1.1rem;
+    color: #00ff41; text-align: center; margin-bottom: 1.5rem;
+    letter-spacing: 3px; opacity: 0.8;
 }
-
-/* Pixel border mixin via box-shadow */
-.pixel-box {
-    background: #2d1b4e;
-    border: 3px solid #7b2d8b;
-    box-shadow: 3px 3px 0 #f5a623, inset 0 0 20px rgba(120,40,200,0.2);
-    border-radius: 0;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    position: relative;
-}
-
-.pixel-box::before {
-    content: '◆';
-    position: absolute;
-    top: -12px; left: 12px;
-    color: #f5a623;
-    font-size: 1rem;
-}
-
 .step-tag {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 0.55rem;
-    background: #7b2d8b;
-    color: #f5a623;
-    border: 2px solid #f5a623;
-    padding: 4px 10px;
-    display: inline-block;
-    margin-bottom: 12px;
-    box-shadow: 2px 2px 0 #f5a623;
-    letter-spacing: 1px;
+    font-family: 'Share Tech Mono', monospace; font-size: 0.75rem;
+    background: #00ff41; color: #000; padding: 4px 12px;
+    display: inline-block; margin-bottom: 12px; letter-spacing: 2px;
+    font-weight: bold; box-shadow: 0 0 10px rgba(0,255,65,0.5);
 }
-
-/* Sudoku grid */
-.sudoku-wrap {
-    display: flex;
-    justify-content: center;
-    margin: 1.5rem 0;
-}
-
+.sudoku-wrap { display: flex; justify-content: center; margin: 1.5rem 0; }
 table.sudoku {
-    border-collapse: collapse;
-    font-family: 'Press Start 2P', monospace;
-    font-size: 13px;
-    border: 4px solid #f5a623;
-    box-shadow: 4px 4px 0 #7b2d8b, 8px 8px 0 rgba(245,166,35,0.3);
+    border-collapse: collapse; font-family: 'Share Tech Mono', monospace;
+    font-size: 18px; border: 2px solid #00ff41;
+    box-shadow: 0 0 20px rgba(0,255,65,0.4);
 }
-
 table.sudoku td {
-    width: 44px;
-    height: 44px;
-    text-align: center;
-    vertical-align: middle;
-    background: #1a0a2e;
-    color: #94a3b8;
+    width: 44px; height: 44px; text-align: center; vertical-align: middle;
+    background: #001a00; color: #00aa2e;
 }
-
-table.sudoku td.given {
-    color: #7dd3fc;
-    background: #0f172a;
-}
-
-table.sudoku td.solved {
-    color: #86efac;
-    background: #052e16;
-}
-
-table.sudoku td.empty {
-    color: transparent;
-}
-
-/* thick borders every 3 */
-table.sudoku tr:nth-child(3n) td { border-bottom: 3px solid #f5a623; }
-table.sudoku tr:nth-child(3n+1) td { border-top: 3px solid #f5a623; }
-table.sudoku td:nth-child(3n) { border-right: 3px solid #f5a623; }
-table.sudoku td:nth-child(3n+1) { border-left: 3px solid #f5a623; }
-table.sudoku td { border: 1px solid #3b1f6e; }
-
-/* Cat animations */
-.cat-idle {
-    font-size: 5rem;
-    text-align: center;
-    animation: float 3s ease-in-out infinite;
-    display: block;
-    filter: drop-shadow(0 0 12px rgba(200,100,255,0.6));
-}
-
-.cat-working {
-    font-size: 5rem;
-    text-align: center;
-    animation: spin 1s linear infinite;
-    display: block;
-}
-
-.cat-celebrate {
-    font-size: 6rem;
-    text-align: center;
-    animation: bounce 0.5s ease infinite alternate;
-    display: block;
-    filter: drop-shadow(0 0 20px rgba(245,166,35,0.8));
-}
-
-@keyframes float {
-    0%, 100% { transform: translateY(0px) rotate(-3deg); }
-    50% { transform: translateY(-12px) rotate(3deg); }
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg) scale(1); }
-    50% { transform: rotate(180deg) scale(1.2); }
-    100% { transform: rotate(360deg) scale(1); }
-}
-
-@keyframes bounce {
-    0% { transform: translateY(0) scale(1); }
-    100% { transform: translateY(-15px) scale(1.1); }
-}
-
-/* Win banner */
+table.sudoku td.given { color: #00ff41; background: #002200; text-shadow: 0 0 8px #00ff41; font-weight: bold; }
+table.sudoku td.solved { color: #ffd000; background: #1a1500; text-shadow: 0 0 10px #ffb000; font-weight: bold; }
+table.sudoku td.empty { color: transparent; }
+table.sudoku tr:nth-child(3n) td { border-bottom: 2px solid #00ff41; }
+table.sudoku tr:nth-child(3n+1) td { border-top: 2px solid #00ff41; }
+table.sudoku td:nth-child(3n) { border-right: 2px solid #00ff41; }
+table.sudoku td:nth-child(3n+1) { border-left: 2px solid #00ff41; }
+table.sudoku td { border: 1px solid #004d15; }
 .win-banner {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 0.9rem;
-    background: linear-gradient(135deg, #7b2d8b, #1a0a2e);
-    border: 4px solid #f5a623;
-    box-shadow: 6px 6px 0 #f5a623;
-    color: #f5a623;
-    text-align: center;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    line-height: 2.5;
-    animation: glitch 2s infinite;
+    font-family: 'Share Tech Mono', monospace; font-size: 1.1rem;
+    background: rgba(0,20,0,0.9); border: 1px solid #00ff41;
+    box-shadow: 0 0 25px rgba(0,255,65,0.5); color: #00ff41;
+    text-align: center; padding: 1.5rem; margin: 1rem 0;
+    line-height: 2; letter-spacing: 2px; animation: glitch 3s infinite;
 }
-
 @keyframes glitch {
-    0%, 95%, 100% { text-shadow: 2px 2px 0 #7b2d8b; }
-    96% { text-shadow: -2px 2px 0 #00ffff, 2px -2px 0 #ff00ff; transform: skewX(2deg); }
-    97% { text-shadow: 2px -2px 0 #00ffff, -2px 2px 0 #ff00ff; transform: skewX(-2deg); }
-    98% { text-shadow: none; transform: skewX(0); }
+    0%, 95%, 100% { text-shadow: 0 0 10px #00ff41; }
+    96% { text-shadow: -2px 0 #ff0000, 2px 0 #0000ff; transform: skewX(3deg); }
+    97% { text-shadow: 2px 0 #ff0000, -2px 0 #0000ff; transform: skewX(-3deg); }
+    98% { text-shadow: 0 0 10px #00ff41; transform: skewX(0); }
 }
-
-/* Stats */
-.stat-pixel {
-    background: #0f0620;
-    border: 2px solid #7b2d8b;
-    box-shadow: 2px 2px 0 #f5a623;
-    padding: 1rem;
-    text-align: center;
+.stat-box {
+    background: rgba(0,20,0,0.85); border: 1px solid #00ff41;
+    box-shadow: 0 0 10px rgba(0,255,65,0.3); padding: 1rem; text-align: center;
 }
+.stat-num { font-family: 'Share Tech Mono', monospace; font-size: 1.4rem; color: #00ff41; display: block; text-shadow: 0 0 8px #00ff41; }
+.stat-lbl { font-size: 0.85rem; color: #00aa2e; display: block; margin-top: 4px; letter-spacing: 1px; }
+.px-divider { border: none; border-top: 1px solid #00ff41; margin: 1.5rem 0; box-shadow: 0 0 8px rgba(0,255,65,0.4); }
+[data-testid="stFileUploadDropzone"] { background: rgba(0,20,0,0.8) !important; border: 2px dashed #00ff41 !important; border-radius: 4px !important; }
+.stSpinner > div { border-top-color: #00ff41 !important; }
+p, .stMarkdown p { color: #00cc35; }
+.puntos::after { content: ''; animation: puntosanim 1.2s steps(4,end) infinite; }
+@keyframes puntosanim { 0%{content:'';} 25%{content:'.';} 50%{content:'..';} 75%{content:'...';} }
+.cur { animation: parpadeo 0.8s step-end infinite; }
+@keyframes parpadeo { 50% { opacity: 0; } }
+.upload-area { border: 2px dashed #00ff41; background: rgba(0,20,0,0.6); padding: 2rem; text-align: center; box-shadow: inset 0 0 30px rgba(0,255,65,0.08); }
 
-.stat-num {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 1.2rem;
-    color: #f5a623;
-    display: block;
+/* Botones estilo Matrix */
+.stButton > button {
+    font-family: 'Share Tech Mono', monospace !important;
+    background: rgba(0,20,0,0.9) !important;
+    color: #00ff41 !important;
+    border: 2px solid #00ff41 !important;
+    border-radius: 4px !important;
+    letter-spacing: 2px !important;
+    box-shadow: 0 0 12px rgba(0,255,65,0.4) !important;
+    transition: all 0.2s !important;
+    width: 100% !important;
+    font-size: 1.05rem !important;
 }
-
-.stat-lbl {
-    font-family: 'VT323', monospace;
-    font-size: 1rem;
-    color: #c084fc;
-    display: block;
-    margin-top: 4px;
-    letter-spacing: 1px;
+.stButton > button:hover {
+    background: #00ff41 !important; color: #000 !important;
+    box-shadow: 0 0 25px rgba(0,255,65,0.8) !important;
 }
-
-/* Upload area */
-.upload-area {
-    border: 3px dashed #7b2d8b;
-    background: rgba(45, 27, 78, 0.5);
-    padding: 2rem;
-    text-align: center;
-    box-shadow: inset 0 0 30px rgba(120,40,200,0.1);
-}
-
-/* Pixel divider */
-.px-divider {
-    border: none;
-    border-top: 3px solid #7b2d8b;
-    margin: 1.5rem 0;
-    box-shadow: 0 2px 0 rgba(245,166,35,0.3);
-}
-
-/* Streamlit widget overrides */
-.stFileUploader {
-    background: transparent !important;
-}
-
-[data-testid="stFileUploadDropzone"] {
-    background: rgba(45,27,78,0.8) !important;
-    border: 3px dashed #7b2d8b !important;
-    border-radius: 0 !important;
-}
-
-.stSpinner > div {
-    border-top-color: #f5a623 !important;
-}
-
-p, .stMarkdown p {
-    color: #c4b5fd;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
+# ── Mensajes de hacker ───────────────────────────────────────
+# Compañeros de clase y profes. Edita estas listas si falta alguien.
+COMPANEROS = ["Bárbara", "Ainara", "Nora", "David", "Leire", "Eduardo",
+              "Raúl", "Ander", "Álex", "Juan"]
+PROFES = ["Diego", "Andreea"]
+
+def iniciar_baraja():
+    """Crea una 'baraja' de nombres barajados que se va consumiendo sin repetir.
+    Se guarda en session_state para que dure toda la intrusión."""
+    nombres = COMPANEROS + PROFES
+    random.shuffle(nombres)
+    st.session_state.baraja = nombres
+
+def siguiente_nombre():
+    """Saca el siguiente nombre de la baraja sin repetir. Si se acaba, rebaraja."""
+    if not st.session_state.get("baraja"):
+        iniciar_baraja()
+    return st.session_state.baraja.pop()
+
+def mensajes_hack(fase):
+    """Genera mensajes usando nombres SIN repetir (baraja compartida)."""
+    plantillas = {
+        "intro": [
+            "Accediendo al ordenador central de The Bridge",
+            "Localizando a {n} en la red del bootcamp",
+            "Interceptando los mensajes de {n}",
+            "Rastreando la IP de {n}",
+        ],
+        "deteccion": [
+            "Hackeando el portátil de {n}",
+            "Robando los apuntes secretos de {n}",
+            "Accediendo a la webcam de {n}",
+        ],
+        "ocr": [
+            "Descifrando los WhatsApp de {n}",
+            "Filtrando el historial de búsqueda de {n}",
+            "Copiando el proyecto de {n} sin que se entere",
+        ],
+        "backtrack": [
+            "Cambiando las notas de {n} en el expediente",
+            "Reenviando los memes de {n} a toda la clase",
+            "Borrando las faltas de asistencia de {n}",
+        ],
+    }
+    salida = []
+    for t in plantillas.get(fase, ["Procesando"]):
+        if "{n}" in t:
+            salida.append(t.format(n=siguiente_nombre()))
+        else:
+            salida.append(t)
+    return salida
+
+def animar_hack(fase, contenedor, delay=2.2, pausa_final=2.5):
+    """Muestra los mensajes uno a uno. Cada mensaje activo lleva puntos animados
+    (vía CSS) y un cursor. Los anteriores quedan con [OK]. Al final, todos los
+    mensajes permanecen en pantalla con sus puntos animados un rato."""
+    msgs = mensajes_hack(fase)
+    acumulado = []
+    for m in msgs:
+        # Mensajes ya completados
+        html = "<div style='font-family:Share Tech Mono,monospace; padding:12px 0; font-size:1.1rem;'>"
+        for prev in acumulado:
+            html += (f"<div style='color:#00aa2e; opacity:0.8; margin:8px 0;'>"
+                     f"&gt; {prev} <span style='color:#7fff00'>[OK]</span></div>")
+        # Mensaje activo: con puntos animados CSS + cursor parpadeante
+        html += (f"<div style='color:#00ff41; margin:8px 0; text-shadow:0 0 8px #00ff41;'>"
+                 f"&gt; {m}<span class='puntos'></span> <span class='cur'>█</span></div>")
+        html += "</div>"
+        contenedor.markdown(html, unsafe_allow_html=True)
+        time.sleep(delay)
+        acumulado.append(m)
+    # Estado final: TODOS visibles. El último sigue "trabajando" con puntos animados
+    html = "<div style='font-family:Share Tech Mono,monospace; padding:12px 0; font-size:1.1rem;'>"
+    for prev in acumulado[:-1]:
+        html += (f"<div style='color:#00aa2e; opacity:0.8; margin:8px 0;'>"
+                 f"&gt; {prev} <span style='color:#7fff00'>[OK]</span></div>")
+    html += (f"<div style='color:#00ff41; margin:8px 0; text-shadow:0 0 8px #00ff41;'>"
+             f"&gt; {acumulado[-1]}<span class='puntos'></span> <span class='cur'>█</span></div>")
+    html += "</div>"
+    contenedor.markdown(html, unsafe_allow_html=True)
+    time.sleep(pausa_final)
+
 # ── Header ───────────────────────────────────────────────────
-st.markdown("<span class='cat-idle'>🐱‍🔮</span>", unsafe_allow_html=True)
-st.title("SUDOKU MASTER")
-st.markdown("<p class='pixel-subtitle'>★ LA GATA MAGA RESUELVE TODO ★</p>", unsafe_allow_html=True)
+st.title("SUDOKU RELOADED")
+st.markdown("<p class='matrix-subtitle'>// NO HAY CUCHARA · SOLO HAY SUDOKU //</p>", unsafe_allow_html=True)
 
 # ── Cargar modelos ───────────────────────────────────────────
 @st.cache_resource
 def cargar_modelos():
-    modelo_yolo = YOLO(os.path.join(BASE_DIR, "modelos", "best.pt"))
+    modelo_yolo = YOLO(os.path.join(BASE_DIR, "modelos", "yolo.pt"))
     reader = easyocr.Reader(['en'], gpu=False)
     return modelo_yolo, reader
 
-with st.spinner("🔮 Invocando los modelos de IA..."):
-    modelo_yolo, reader = cargar_modelos()
+modelo_yolo, reader = cargar_modelos()
 
-# ── Funciones ────────────────────────────────────────────────
+# ── Funciones (lógica intacta) ───────────────────────────────
 def corregir_perspectiva(img):
     gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gris, (5, 5), 0)
@@ -308,11 +256,9 @@ def corregir_perspectiva(img):
     pts = esquinas.reshape(4, 2).astype('float32')
     rect = np.zeros((4, 2), dtype='float32')
     s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
+    rect[0] = pts[np.argmin(s)]; rect[2] = pts[np.argmax(s)]
     diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
+    rect[1] = pts[np.argmin(diff)]; rect[3] = pts[np.argmax(diff)]
     lado = 450
     dst = np.array([[0,0],[lado,0],[lado,lado],[0,lado]], dtype='float32')
     M = cv2.getPerspectiveTransform(rect, dst)
@@ -320,70 +266,45 @@ def corregir_perspectiva(img):
 
 def dividir_celdas(img, margen=4):
     alto, ancho = img.shape[:2]
-    celda_alto = alto // 9
-    celda_ancho = ancho // 9
+    ch, cw = alto // 9, ancho // 9
     celdas = []
     for fila in range(9):
-        fila_celdas = []
+        fc = []
         for col in range(9):
-            y1 = fila * celda_alto + margen
-            y2 = y1 + celda_alto - margen * 2
-            x1 = col * celda_ancho + margen
-            x2 = x1 + celda_ancho - margen * 2
-            fila_celdas.append(img[y1:y2, x1:x2])
-        celdas.append(fila_celdas)
+            y1 = fila*ch+margen; y2 = y1+ch-margen*2
+            x1 = col*cw+margen; x2 = x1+cw-margen*2
+            fc.append(img[y1:y2, x1:x2])
+        celdas.append(fc)
     return celdas
 
 def preprocesar_celda(gris, fondo_oscuro):
-    """Preprocesa celda según si el fondo es oscuro o claro."""
     gris = cv2.resize(gris, (96, 96), interpolation=cv2.INTER_CUBIC)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
     gris = clahe.apply(gris)
     if fondo_oscuro:
-        # Fondo oscuro con dígitos claros → invertir para EasyOCR
         gris = cv2.bitwise_not(gris)
-    gris = cv2.adaptiveThreshold(
-        gris, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 11, 2
-    )
+    gris = cv2.adaptiveThreshold(gris, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
     return gris
 
 def predecir_celda(celda, reader):
     gris = cv2.cvtColor(celda, cv2.COLOR_BGR2GRAY)
-
-    # Detectar automáticamente si el fondo es oscuro (media de píxeles < 128)
     fondo_oscuro = np.mean(gris) < 128
-
-    # Intentar primero con la detección automática, luego con la inversa
     for usar_oscuro in [fondo_oscuro, not fondo_oscuro]:
         img = preprocesar_celda(gris.copy(), usar_oscuro)
-
-        # Primera pasada: confianza alta
-        resultado = reader.readtext(img, allowlist='123456789', detail=1, width_ths=0.2)
-        if resultado:
-            texto, confianza = resultado[0][1], resultado[0][2]
-            if texto.isdigit() and 1 <= int(texto) <= 9 and confianza >= 0.4:
-                return int(texto)
-
-        # Segunda pasada: confianza más baja
-        resultado2 = reader.readtext(img, allowlist='123456789', detail=1, width_ths=0.1)
-        if resultado2:
-            texto2, confianza2 = resultado2[0][1], resultado2[0][2]
-            if texto2.isdigit() and 1 <= int(texto2) <= 9 and confianza2 >= 0.25:
-                return int(texto2)
-
+        r = reader.readtext(img, allowlist='123456789', detail=1, width_ths=0.2)
+        if r:
+            t, c = r[0][1], r[0][2]
+            if t.isdigit() and 1 <= int(t) <= 9 and c >= 0.4:
+                return int(t)
+        r2 = reader.readtext(img, allowlist='123456789', detail=1, width_ths=0.1)
+        if r2:
+            t2, c2 = r2[0][1], r2[0][2]
+            if t2.isdigit() and 1 <= int(t2) <= 9 and c2 >= 0.25:
+                return int(t2)
     return 0
 
 def detectar_sudoku(celdas, reader):
-    sudoku = []
-    for fila in range(9):
-        fila_nums = []
-        for col in range(9):
-            digito = predecir_celda(celdas[fila][col], reader)
-            fila_nums.append(digito)
-        sudoku.append(fila_nums)
-    return sudoku
+    return [[predecir_celda(celdas[f][c], reader) for c in range(9)] for f in range(9)]
 
 def es_valido(t, fila, col, num):
     if num in t[fila]: return False
@@ -408,8 +329,7 @@ def backtrack(t):
 
 def resolver(sudoku):
     tablero = copy.deepcopy(sudoku)
-    exito = backtrack(tablero)
-    return tablero, exito
+    return tablero, backtrack(tablero)
 
 def render_sudoku(sudoku, original=None):
     html = "<div class='sudoku-wrap'><table class='sudoku'>"
@@ -420,140 +340,164 @@ def render_sudoku(sudoku, original=None):
             if original is None:
                 css = "given" if num != 0 else "empty"
             else:
-                if original[i][j] != 0:
-                    css = "given"
-                elif num != 0:
-                    css = "solved"
-                else:
-                    css = "empty"
+                css = "given" if original[i][j] != 0 else ("solved" if num != 0 else "empty")
             html += f"<td class='{css}'>{valor}</td>"
         html += "</tr>"
     html += "</table></div>"
     return html
 
-# ── Upload ───────────────────────────────────────────────────
-st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
-st.markdown("<div class='step-tag'>► MISIÓN</div>", unsafe_allow_html=True)
-st.markdown("**Sube un sudoku y la gata maga lo resolverá al instante**")
+# ════════════════════════════════════════════════════════════
+# FLUJO POR PASOS con session_state
+# ════════════════════════════════════════════════════════════
 
-imagen_subida = st.file_uploader(
-    "Sube tu foto del sudoku",
-    type=["jpg", "jpeg", "png"],
-    label_visibility="collapsed"
-)
+if "paso" not in st.session_state:
+    st.session_state.paso = 0
+    st.session_state.datos = {}
+
+st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
+st.markdown("<div class='step-tag'>&gt;_ OBJETIVO</div>", unsafe_allow_html=True)
+st.markdown("**Sube la matriz a descifrar y ve avanzando por las fases**")
+
+imagen_subida = st.file_uploader("Sube tu sudoku", type=["jpg","jpeg","png"], label_visibility="collapsed")
+
+# Si cambia la imagen, reiniciar el flujo
+if imagen_subida is not None:
+    if st.session_state.datos.get("nombre") != imagen_subida.name:
+        st.session_state.paso = 0
+        st.session_state.datos = {"nombre": imagen_subida.name}
 
 if not imagen_subida:
     st.markdown("""
     <div class='upload-area'>
-        <div style='font-size:2.5rem'>📜</div>
-        <div style='color:#c084fc; font-family:"VT323",monospace; font-size:1.4rem; letter-spacing:2px'>
-            ARRASTRA TU SUDOKU AQUÍ<br>
-            <span style='font-size:1rem; opacity:0.7'>JPG · PNG · Foto de periódico · Pantalla digital</span>
+        <div style='font-size:2.5rem; color:#00ff41'>&#9783;</div>
+        <div style='color:#00ff41; font-family:"Share Tech Mono",monospace; font-size:1.2rem; letter-spacing:2px'>
+            ARRASTRA LA MATRIX AQUÍ<br>
+            <span style='font-size:0.9rem; opacity:0.6'>JPG · PNG · Captura · Foto de periódico</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
+    st.stop()
 
-if imagen_subida:
+# Leer imagen y guardarla en sesión
+if "imagen" not in st.session_state.datos:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-        tmp.write(imagen_subida.read())
-        tmp_path = tmp.name
-
-    imagen = cv2.imread(tmp_path)
+        tmp.write(imagen_subida.read()); tmp_path = tmp.name
+    st.session_state.datos["imagen"] = cv2.imread(tmp_path)
     os.unlink(tmp_path)
 
-    st.image(cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB), caption="📸 Tu misión", use_container_width=True)
+imagen = st.session_state.datos["imagen"]
 
-    # ── PASO 1: YOLO ─────────────────────────────────────────
-    st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
-    st.markdown("<div class='step-tag'>► PASO 1 · YOLO VISION</div>", unsafe_allow_html=True)
-    st.markdown("**La gata usa su visión mágica para encontrar el sudoku...**")
+# ── PASO 0 → botón para revelar imagen ───────────────────────
+if st.session_state.paso == 0:
+    if st.button("🔓 INICIAR INTRUSIÓN"):
+        iniciar_baraja()
+        ph = st.empty()
+        animar_hack("intro", ph)
+        ph.empty()
+        st.session_state.paso = 1
+        st.rerun()
+    st.stop()
 
-    with st.spinner("🔍 Escaneando con YOLO..."):
+# Mostrar la imagen objetivo (a partir del paso 1)
+st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
+st.image(cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB), caption=">> MATRIX OBJETIVO", use_container_width=True)
+
+# ── PASO 1 → FASE 1: YOLO + perspectiva ──────────────────────
+if st.session_state.paso == 1:
+    if st.button("▶ EJECUTAR FASE 1 · LOCALIZACIÓN [YOLO]"):
+        ph = st.empty()
+        animar_hack("deteccion", ph)
         results = modelo_yolo(imagen)
+        if len(results[0].boxes) == 0:
+            ph.empty()
+            st.error(">> ERROR: No se detectó ninguna matriz. Reintenta con otra imagen.")
+            st.stop()
+        x1,y1,x2,y2 = map(int, results[0].boxes.xyxy[0])
+        conf = float(results[0].boxes.conf[0])
+        recorte = results[0].orig_img[y1:y2, x1:x2]
+        corregida = corregir_perspectiva(recorte)
+        st.session_state.datos.update({"recorte": recorte, "corregida": corregida, "conf": conf})
+        ph.empty()
+        st.session_state.paso = 2
+        st.rerun()
+    st.stop()
 
-    if len(results[0].boxes) == 0:
-        st.error("😿 ¡La gata no encontró ningún sudoku! Prueba con otra foto.")
-        st.stop()
+# Mostrar resultado fase 1
+st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
+st.markdown("<div class='step-tag'>&gt;_ FASE 1 · LOCALIZACIÓN [YOLO]</div>", unsafe_allow_html=True)
+c1, c2 = st.columns(2)
+with c1:
+    st.image(cv2.cvtColor(st.session_state.datos["recorte"], cv2.COLOR_BGR2RGB), caption=f">> OBJETIVO FIJADO ({st.session_state.datos['conf']:.0%})")
+with c2:
+    st.image(cv2.cvtColor(st.session_state.datos["corregida"], cv2.COLOR_BGR2RGB), caption=">> SEÑAL ESTABILIZADA")
 
-    x1, y1, x2, y2 = map(int, results[0].boxes.xyxy[0])
-    confianza_yolo = float(results[0].boxes.conf[0])
-    img_recortada = results[0].orig_img[y1:y2, x1:x2]
-
-    with st.spinner("📐 Corrigiendo perspectiva con magia..."):
-        img_corregida = corregir_perspectiva(img_recortada)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image(cv2.cvtColor(img_recortada, cv2.COLOR_BGR2RGB), caption=f"🎯 YOLO ({confianza_yolo:.0%})")
-    with col2:
-        st.image(cv2.cvtColor(img_corregida, cv2.COLOR_BGR2RGB), caption="✨ Perspectiva corregida")
-
-    # ── PASO 2: OCR ──────────────────────────────────────────
-    st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
-    st.markdown("<div class='step-tag'>► PASO 2 · LECTURA MÁGICA</div>", unsafe_allow_html=True)
-    st.markdown("**EasyOCR lee cada celda del pergamino...**")
-
-    t_ocr_start = time.time()
-    with st.spinner("🔢 Descifrando los números arcanos..."):
-        celdas = dividir_celdas(img_corregida)
+# ── PASO 2 → FASE 2: OCR ─────────────────────────────────────
+if st.session_state.paso == 2:
+    if st.button("▶ EJECUTAR FASE 2 · DESENCRIPTADO [OCR]"):
+        ph = st.empty()
+        animar_hack("ocr", ph)
+        t0 = time.time()
+        celdas = dividir_celdas(st.session_state.datos["corregida"])
         sudoku = detectar_sudoku(celdas, reader)
-    t_ocr = time.time() - t_ocr_start
+        st.session_state.datos["sudoku"] = sudoku
+        st.session_state.datos["t_ocr"] = time.time() - t0
+        ph.empty()
+        st.session_state.paso = 3
+        st.rerun()
+    st.stop()
 
-    numeros_detectados = sum(1 for fila in sudoku for n in fila if n != 0)
-    huecos = 81 - numeros_detectados
+# Mostrar resultado fase 2
+sudoku = st.session_state.datos["sudoku"]
+nd = sum(1 for f in sudoku for n in f if n != 0)
+st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
+st.markdown("<div class='step-tag'>&gt;_ FASE 2 · DESENCRIPTADO [OCR]</div>", unsafe_allow_html=True)
+st.markdown(f"<p style='color:#00ff41'>&gt;&gt; {nd} glifos descifrados · {81-nd} casillas cifradas</p>", unsafe_allow_html=True)
+st.markdown(render_sudoku(sudoku), unsafe_allow_html=True)
+with st.expander(">> Inspeccionar lectura en crudo (debug)"):
+    for i, fila in enumerate(sudoku):
+        st.text(f"Fila {i+1}: {fila}")
 
-    st.markdown(f"<p style='color:#c084fc'>✦ {numeros_detectados} dígitos detectados · {huecos} huecos por resolver</p>", unsafe_allow_html=True)
-    st.markdown(render_sudoku(sudoku), unsafe_allow_html=True)
-
-    # Debug opcional: muestra el sudoku en texto para verificar la lectura
-    with st.expander("🔍 Ver lectura OCR en texto (debug)"):
-        for i, fila in enumerate(sudoku):
-            st.text(f"Fila {i+1}: {fila}")
-
-    # ── PASO 3: RESOLVER ─────────────────────────────────────
-    st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
-    st.markdown("<div class='step-tag'>► PASO 3 · CONJURO FINAL</div>", unsafe_allow_html=True)
-    st.markdown("**La gata lanza el conjuro de backtracking...**")
-
-    t_solver_start = time.time()
-    with st.spinner("🧙‍♀️ Calculando la solución perfecta..."):
+# ── PASO 3 → FASE 3: backtracking ────────────────────────────
+if st.session_state.paso == 3:
+    if st.button("▶ EJECUTAR FASE 3 · DESCIFRADO [BACKTRACKING]"):
+        ph = st.empty()
+        animar_hack("backtrack", ph)
+        t0 = time.time()
         solucion, exito = resolver(sudoku)
-    t_solver = time.time() - t_solver_start
+        st.session_state.datos["solucion"] = solucion
+        st.session_state.datos["exito"] = exito
+        st.session_state.datos["t_solver"] = time.time() - t0
+        ph.empty()
+        st.session_state.paso = 4
+        st.rerun()
+    st.stop()
 
-    if not exito:
-        st.error("😿 ¡El conjuro falló! Puede que haya errores en la detección. Prueba con otra foto.")
-        st.stop()
+# ── PASO 4 → resultado final ─────────────────────────────────
+if not st.session_state.datos["exito"]:
+    st.error(">> ERROR: Cifrado irrompible. Posibles glifos mal leídos. Reintenta con otra imagen.")
+    st.stop()
 
-    # ── VICTORIA ─────────────────────────────────────────────
-    st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
-    st.markdown("<span class='cat-celebrate'>🐱‍🔮</span>", unsafe_allow_html=True)
-    st.markdown("""
-    <div class='win-banner'>
-        ✨ ¡CONJURO COMPLETADO! ✨<br>
-        <span style='font-size:0.7rem; color:#c084fc'>LA GATA MAGA HA RESUELTO EL SUDOKU</span>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
+st.markdown("""
+<div class='win-banner'>
+    &gt;&gt; ACCESO CONCEDIDO &lt;&lt;<br>
+    <span style='font-size:0.8rem; color:#00aa2e'>LA MATRIX HA SIDO DESCIFRADA</span>
+</div>
+""", unsafe_allow_html=True)
+st.markdown(render_sudoku(st.session_state.datos["solucion"], original=sudoku), unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; font-family:\"Share Tech Mono\",monospace; font-size:1rem; letter-spacing:2px; color:#00ff41'>&gt; <span style='color:#00ff41'>VERDE = DATOS ORIGINALES</span> &nbsp;&nbsp; <span style='color:#ffd000'>ÁMBAR = REALIDAD RECONSTRUIDA</span></p>", unsafe_allow_html=True)
 
-    st.markdown(render_sudoku(solucion, original=sudoku), unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; font-family:\"VT323\",monospace; font-size:1.2rem; letter-spacing:2px'>◆ AZUL = NÚMEROS ORIGINALES &nbsp;&nbsp; VERDE = SOLUCIÓN MÁGICA ◆</p>", unsafe_allow_html=True)
+st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.markdown(f"<div class='stat-box'><span class='stat-num'>{nd}</span><span class='stat-lbl'>GLIFOS LEÍDOS</span></div>", unsafe_allow_html=True)
+with c2:
+    st.markdown(f"<div class='stat-box'><span class='stat-num'>{st.session_state.datos['t_ocr']:.1f}s</span><span class='stat-lbl'>T. DESENCRIPTADO</span></div>", unsafe_allow_html=True)
+with c3:
+    st.markdown(f"<div class='stat-box'><span class='stat-num'>{st.session_state.datos['t_solver']*1000:.0f}ms</span><span class='stat-lbl'>T. DESCIFRADO</span></div>", unsafe_allow_html=True)
 
-    # ── STATS ─────────────────────────────────────────────────
-    st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown(f"""<div class='stat-pixel'>
-            <span class='stat-num'>{numeros_detectados}</span>
-            <span class='stat-lbl'>DÍGITOS LEÍDOS</span>
-        </div>""", unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"""<div class='stat-pixel'>
-            <span class='stat-num'>{t_ocr:.1f}s</span>
-            <span class='stat-lbl'>TIEMPO OCR</span>
-        </div>""", unsafe_allow_html=True)
-    with col3:
-        st.markdown(f"""<div class='stat-pixel'>
-            <span class='stat-num'>{t_solver*1000:.0f}ms</span>
-            <span class='stat-lbl'>TIEMPO SOLVER</span>
-        </div>""", unsafe_allow_html=True)
-
-    st.markdown("<p style='text-align:center; color:#4a2070; font-size:0.85rem; margin-top:2rem; font-family:\"VT323\",monospace; letter-spacing:1px'>POWERED BY YOLO · EASYOCR · BACKTRACKING · STREAMLIT</p>", unsafe_allow_html=True)
+st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
+if st.button("↺ NUEVA INTRUSIÓN"):
+    st.session_state.paso = 0
+    st.session_state.datos = {}
+    st.rerun()
