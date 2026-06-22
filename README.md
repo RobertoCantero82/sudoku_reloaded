@@ -16,11 +16,10 @@ sudoku_reloaded/
 ├── app/
 │   └── app_matrix_doble_solucion.py
 ├── cuadernos/
-│   ├── deteccion_sudoku.ipynb
-│   ├── entrenamiento_YOLO.ipynb
-│   ├── entrenar_ocr_fuentes.ipynb
-│   ├── entrenar_solver_colab.ipynb
-│   └── sudoku_definitivo_comparacion_comentado.ipynb
+│   ├── 01_entrenamiento_YOLO.ipynb
+│   ├── 02_entrenamiento_numeros.ipynb
+│   ├── 03_entrenamiento_solucion_CNN.ipynb
+│   └── 04_flujo_sudoku.ipynb
 ├── img_pruebas/
 │   └── (imágenes de sudokus para probar la app)
 └── modelos/
@@ -101,10 +100,10 @@ Algoritmo clásico de búsqueda recursiva con retroceso. Encuentra la primera ce
 ### Fase 5 — Comparativa
 
 La app muestra ambas soluciones lado a lado con código de colores:
-- 🟢 **Verde** → celda que la CNN acertó (coincide con backtracking)
+- 🟢 **Verde brillante** → pista original del puzzle
+- 🔷 **Azul** → celda que la CNN acertó (coincide con backtracking)
 - 🔴 **Rojo** → celda que la CNN falló
 - 🟡 **Ámbar** → celda resuelta por backtracking
-- ⬜ **Blanco** → pista original del puzzle
 
 La tabla de métricas compara celdas correctas, tiempo en ms y garantía de solución.
 
@@ -129,14 +128,24 @@ streamlit run app/app_matrix_doble_solucion.py
 
 ### Flujo de la app
 
+Al subir una imagen, el sistema presenta una elección:
+
+- **🔴 Píldora roja** → entras en la Matrix y ejecutas el pipeline completo
+- **🔵 Píldora azul** → la historia termina aquí (gif de despedida y botón de nueva intrusión)
+
+Si eliges la píldora roja, el flujo avanza fase a fase con un botón por paso:
+
 | Fase | Botón | Proceso |
 |------|-------|---------|
 | Inicio | 🔴 PÍLDORA ROJA | Arranca el flujo con mensajes de hackeo animados |
+| Inicio | 🔵 PÍLDORA AZUL | Gif de despedida y botón de nueva intrusión |
 | 1 | LOCALIZACIÓN SUDOKU | YOLO + corrección de perspectiva |
-| 2 | DESENCRIPTANDO | CNN OCR — lee los 81 dígitos |
+| 2 | RECONOCIMIENTO ÓPTICO · OCR | CNN OCR — lee los 81 dígitos |
 | 3 | RED NEURONAL | Solver neuronal — inferencia directa |
 | 4 | BACKTRACKING | Resolución garantizada |
 | 5 | ANÁLISIS COMPARATIVO | Tableros lado a lado + tabla de métricas |
+
+> ⚠️ Si la OCR leyó mal algún dígito, el backtracking no encontrará solución válida. En ese caso aparece un aviso de error y el botón **↺ REINTENTAR CON OTRA IMAGEN**.
 
 ### Rutas de modelos
 
@@ -166,11 +175,10 @@ RUTA_IMAGEN     = Path('../img_pruebas/024.png')
 
 | Cuaderno | Descripción |
 |----------|-------------|
-| `deteccion_sudoku.ipynb` | Exploración inicial: detección de contornos, corrección de perspectiva, segmentación de celdas |
-| `entrenamiento_YOLO.ipynb` | Entrenamiento del detector de tablero con YOLO |
-| `entrenar_ocr_fuentes.ipynb` | Generación del dataset de dígitos tipográficos y entrenamiento de la CNN OCR |
-| `entrenar_solver_colab.ipynb` | Entrenamiento del solver neuronal en Colab con GPU sobre el CSV de 1M de sudokus |
-| `sudoku_definitivo_comparacion_comentado.ipynb` | Flujo completo, comentado línea a línea. Desde la detección del recuadro de juego, pasando por el reconocimiento óptico de caracteres, hasta las soluciones (CNN y backtracking)y su comparativa.
+| `01_entrenamiento_YOLO.ipynb` | Entrenamiento del detector de tablero con YOLO |
+| `02_entrenamiento_numeros.ipynb` | Generación del dataset de dígitos tipográficos y entrenamiento de la CNN OCR |
+| `03_entrenamiento_solucion_CNN.ipynb` | Entrenamiento del solver neuronal en Colab con GPU sobre el CSV de 1M de sudokus |
+| `04_flujo_sudoku.ipynb` | Flujo completo comentado línea a línea: detección, OCR, solución CNN y backtracking, y comparativa |
 
 ---
 

@@ -103,6 +103,7 @@ table.sudoku {
     border-collapse: collapse; font-family: 'Share Tech Mono', monospace;
     font-size: 20.7px; border: 2px solid #00ff41;
     box-shadow: 0 0 20px rgba(0,255,65,0.4);
+    table-layout: fixed; width: 396px;
 }
 table.sudoku td {
     width: 44px; height: 44px; text-align: center; vertical-align: middle;
@@ -110,7 +111,7 @@ table.sudoku td {
 }
 table.sudoku td.given   { color: #00ff41; background: #002200; text-shadow: 0 0 8px #00ff41; font-weight: bold; }
 table.sudoku td.solved  { color: #ffd000; background: #1a1500; text-shadow: 0 0 10px #ffb000; font-weight: bold; }
-table.sudoku td.cnn-ok  { color: #00ff41; background: #001a00; text-shadow: 0 0 8px #00ff41; font-weight: bold; }
+table.sudoku td.cnn-ok  { color: #00cfff; background: #001a22; text-shadow: 0 0 8px #00aaff; font-weight: bold; }
 table.sudoku td.cnn-err { color: #ff4444; background: #1a0000; text-shadow: 0 0 8px #ff2222; font-weight: bold; }
 table.sudoku td.empty   { color: transparent; }
 table.sudoku tr:nth-child(3n) td   { border-bottom: 2px solid #00ff41; }
@@ -313,6 +314,20 @@ def mensajes_hack(fase):
             salida.append(t.format(n=nombre) if "{n}" in t else t)
     return salida
 
+SCROLL_JS = """<script>
+(function(){
+    var doc = window.parent.document;
+    var main = doc.querySelector('section[data-testid="stMain"]')
+             || doc.querySelector('.main')
+             || doc.documentElement;
+    main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
+    window.parent.scrollTo({ top: window.parent.document.body.scrollHeight, behavior: 'smooth' });
+})();
+</script>"""
+
+def scroll_abajo():
+    components.html(SCROLL_JS, height=0)
+
 def animar_hack(fase, contenedor, delay=2.2, pausa_final=2.0):
     msgs = mensajes_hack(fase)
     acumulado = []
@@ -325,6 +340,7 @@ def animar_hack(fase, contenedor, delay=2.2, pausa_final=2.0):
                  f"&gt; {m}<span class='puntos'></span> <span class='cur'>█</span></div>")
         html += "</div>"
         contenedor.markdown(html, unsafe_allow_html=True)
+        scroll_abajo()
         time.sleep(delay)
         acumulado.append(m)
     final = "<div style='font-family:Share Tech Mono,monospace; padding:12px 0; font-size: 1.21rem;'>"
@@ -333,9 +349,9 @@ def animar_hack(fase, contenedor, delay=2.2, pausa_final=2.0):
                   f"&gt; {m} <span style='color:#7fff00'>[OK]</span></div>")
     final += "</div>"
     contenedor.markdown(final, unsafe_allow_html=True)
+    scroll_abajo()
     time.sleep(pausa_final)
     return final
-
 # ── Header ────────────────────────────────────────────────────
 st.title("SUDOKU RELOADED")
 st.markdown("<p class='matrix-subtitle'>REALITY.EXE HA DEJADO DE FUNCIONAR | RESUELVE EL SUDOKU</p>", unsafe_allow_html=True)
@@ -698,7 +714,7 @@ with c2:
 
 # ── PASO 2 → FASE 2: CNN OCR ─────────────────────────────────
 if st.session_state.paso == 2:
-    if st.button("▶ EJECUTAR FASE 2 · DESENCRIPTANDO"):
+    if st.button("▶ EJECUTAR FASE 2 · RECONOCIMIENTO ÓPTICO · OCR"):
         ph        = st.empty()
         log       = animar_hack("ocr", ph)
         t0        = time.time()
@@ -707,6 +723,7 @@ if st.session_state.paso == 2:
         celdas    = dividir_celdas(img_sl)
         sudoku    = detectar_sudoku(celdas, modelo_ocr)
         st.session_state.datos.update({"sudoku": sudoku,
+                                        "img_sl": img_sl,
                                         "t_ocr":  time.time() - t0,
                                         "log_f2": log})
         st.session_state.paso = 3
@@ -716,12 +733,40 @@ if st.session_state.paso == 2:
 sudoku = st.session_state.datos["sudoku"]
 nd     = sum(1 for f in sudoku for n in f if n != 0)
 st.markdown("<hr class='px-divider'>", unsafe_allow_html=True)
-st.markdown("<div class='step-tag'>&gt;_ FASE 2 · DESENCRIPTANDO</div>", unsafe_allow_html=True)
+st.markdown("<div class='step-tag'>&gt;_ FASE 2 · RECONOCIMIENTO ÓPTICO · OCR</div>", unsafe_allow_html=True)
 if st.session_state.datos.get("log_f2"):
     st.markdown(st.session_state.datos["log_f2"], unsafe_allow_html=True)
 st.markdown(f"<p style='color:#00ff41'>&gt;&gt; {nd} glifos descifrados · {81-nd} casillas cifradas</p>",
             unsafe_allow_html=True)
-st.markdown(render_sudoku(sudoku), unsafe_allow_html=True)
+img_sl = st.session_state.datos.get("img_sl")
+if img_sl is not None:
+    import base64 as _b64
+    _, buf = cv2.imencode(".png", img_sl)
+    b64    = _b64.b64encode(buf).decode()
+    st.markdown(f"""
+<div style='display:flex; justify-content:center; gap:1rem; align-items:flex-start;
+            flex-wrap:nowrap; margin:1.5rem 0; overflow-x:auto;'>
+  <div style='text-align:center; flex-shrink:0;'>
+    <p style='color:#00aa2e; font-family:"Share Tech Mono",monospace; font-size:0.80rem;
+              letter-spacing:1px; margin-bottom:8px;'>IMAGEN PROCESADA POR EL MODELO</p>
+    <img src='data:image/png;base64,{b64}'
+         style='width:280px; height:280px; object-fit:cover;
+                border:2px solid #00ff41; box-shadow:0 0 20px rgba(0,255,65,0.4);
+                display:block;'/>
+  </div>
+  <div style='text-align:center; flex-shrink:0;'>
+    <p style='color:#00aa2e; font-family:"Share Tech Mono",monospace; font-size:0.80rem;
+              letter-spacing:1px; margin-bottom:8px;'>DÍGITOS RECONOCIDOS POR LA CNN</p>
+    <div style='width:282px; height:282px; overflow:hidden;'>
+      <div style='transform:scale(0.71); transform-origin:top left; width:396px;'>
+        {render_sudoku(sudoku).replace("<div class='sudoku-wrap'>","<div style='margin:0;'>").strip()}
+      </div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+else:
+    st.markdown(render_sudoku(sudoku), unsafe_allow_html=True)
 # ── PASO 3 → FASE 3: CNN solver ──────────────────────────────
 if st.session_state.paso == 3:
     if st.button("▶ EJECUTAR FASE 3 · RED NEURONAL"):
@@ -768,7 +813,23 @@ if st.session_state.datos.get("log_f4"):
     st.markdown(st.session_state.datos["log_f4"], unsafe_allow_html=True)
 
 if not st.session_state.datos["exito"]:
-    st.error(">> ERROR: Cifrado irrompible. Posibles glifos mal leídos. Reintenta con otra imagen.")
+    st.markdown("""
+<div style='font-family:"Share Tech Mono",monospace; background:rgba(30,0,0,0.9);
+            border:1px solid #ff4444; box-shadow:0 0 20px rgba(255,68,68,0.4);
+            padding:1.5rem; margin:1rem 0; text-align:center; letter-spacing:2px;'>
+    <div style='font-size:1.5rem; margin-bottom:0.5rem;'>⛔</div>
+    <div style='color:#ff4444; font-size:1.1rem; text-shadow:0 0 8px #ff2222;'>
+        &gt;&gt; ERROR: CIFRADO IRROMPIBLE
+    </div>
+    <div style='color:#aa2222; font-size:0.88rem; margin-top:0.5rem;'>
+        La OCR leyó mal uno o más glifos. El puzzle no tiene solución válida.
+    </div>
+</div>
+""", unsafe_allow_html=True)
+    _, col_r, _ = st.columns([1, 2, 1])
+    with col_r:
+        if st.button("↺ REINTENTAR CON OTRA IMAGEN"):
+            components.html("<script>window.parent.location.reload();</script>", height=0)
     st.stop()
 
 st.markdown("""
@@ -817,8 +878,8 @@ with col_b:
     st.markdown(render_sudoku(tablero_bt, original=sudoku), unsafe_allow_html=True)
 
 st.markdown("<p style='font-size:0.9rem; color:#00aa2e; text-align:center'>"
-            "🟢 verde = acierto CNN &nbsp;|&nbsp; 🔴 rojo = fallo CNN &nbsp;|&nbsp; "
-            "🟡 ámbar = backtracking &nbsp;|&nbsp; ⬜ blanco = pista original</p>",
+            "🔵 azul = acierto CNN &nbsp;|&nbsp; 🔴 rojo = fallo CNN &nbsp;|&nbsp; "
+            "🟡 ámbar = backtracking &nbsp;|&nbsp; 🟢 verde brillante = pista original</p>",
             unsafe_allow_html=True)
 
 st.markdown(html_tabla, unsafe_allow_html=True)
